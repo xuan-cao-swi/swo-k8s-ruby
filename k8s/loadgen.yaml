@@ -1,0 +1,43 @@
+# Continuous synthetic traffic against the Rails app so traces keep flowing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rails-swo-demo-loadgen
+  labels:
+    app.kubernetes.io/name: rails-swo-demo-loadgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rails-swo-demo-loadgen
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rails-swo-demo-loadgen
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.11.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              base=http://rails-swo-demo
+              i=0
+              while true; do
+                i=$((i + 1))
+                curl -s -o /dev/null -w "GET / %{http_code}\n" $base/
+                curl -s -o /dev/null -w "GET /items %{http_code}\n" $base/items
+                curl -s -o /dev/null -w "GET /slow %{http_code}\n" $base/slow
+                curl -s -o /dev/null -w "POST /items %{http_code}\n" -X POST -H 'content-type: application/json' \
+                  -d "{\"name\":\"item-$i\",\"quantity\":$((i % 7))}" $base/items
+                if [ $((i % 5)) -eq 0 ]; then curl -s -o /dev/null -w "GET /external %{http_code}\n" $base/external; fi
+                if [ $((i % 10)) -eq 0 ]; then curl -s -o /dev/null -w "GET /error %{http_code}\n" $base/error; fi
+                sleep 2
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi

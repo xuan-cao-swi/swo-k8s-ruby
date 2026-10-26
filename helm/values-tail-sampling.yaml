@@ -1,0 +1,55 @@
+# Tail sampling on the swo-k8s-collector gateway, tuned for the demo Rails app.
+# Helm replaces lists: this policies list replaces the chart's whole default list.
+otel:
+  gateway:
+    tailSampling:
+      enabled: true
+      decision_wait: 10s          # time to wait for all spans of a trace before deciding
+      recordPolicy: true          # tag sampled spans with the policy that sampled them
+      policies:
+        - name: healthcheck-policy            # kube probes on /health
+          type: drop
+          drop:
+            drop_sub_policy:
+              - name: drop-healthcheck-url-path
+                type: string_attribute
+                string_attribute:
+                  key: url.path
+                  values: [/health.*]
+                  enabled_regex_matching: true
+
+        - name: error-policy                  # /error, failed /external
+          type: status_code
+          status_code:
+            status_codes: [ERROR]
+
+        - name: high-latency-policy           # /slow sleeps 0.1-1.5 s
+          type: latency
+          latency:
+            threshold_ms: 1000
+
+        - name: trigger-trace-policy
+          type: boolean_attribute
+          boolean_attribute:
+            key: TriggeredTrace
+            value: true
+
+        - name: items-policy                  # 50% of /items
+          type: and
+          and:
+            and_sub_policy:
+              - name: items-path
+                type: string_attribute
+                string_attribute:
+                  key: url.path
+                  values: [^/items]
+                  enabled_regex_matching: true
+              - name: items-50-percent
+                type: probabilistic
+                probabilistic:
+                  sampling_percentage: 50
+
+        - name: fallback-policy               # 10% of everything else
+          type: probabilistic
+          probabilistic:
+            sampling_percentage: 10

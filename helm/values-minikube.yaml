@@ -1,0 +1,33 @@
+# Overrides for running swo-k8s-collector on a single-node minikube cluster.
+# Full reference: helm show values solarwinds/swo-k8s-collector --version "$CHART_VERSION"
+#
+# otel.endpoint and cluster.name are passed with --set-string on the helm command line.
+# The API token comes from the Secret "solarwinds-api-token", so otel.api_token stays empty.
+
+otel:
+  # Container logs are off by default since chart 5.4.0. Turn them on so the Rails
+  # app's logs (with trace IDs) show up next to its traces in SWO.
+  logs:
+    enabled: true
+    container: true
+    journal: false
+
+  gateway:
+    # Smaller footprint than the defaults (the gateway requests a full CPU by default).
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    # Two fixed replicas, so the loadbalancing exporter really routes traces
+    # between gateway pods when tail sampling is enabled.
+    autoscaler:
+      minReplicas: 2
+      maxReplicas: 2
+
+# OBI (eBPF network topology) needs host kernel features that Docker Desktop's
+# Linux VM does not reliably provide.
+network_topology:
+  enabled: false

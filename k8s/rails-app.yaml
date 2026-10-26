@@ -1,0 +1,81 @@
+# Rails demo app instrumented with solarwinds_apm.
+# Runtime settings come from:
+#   ConfigMap rails-swo-demo-config  (SW_APM_COLLECTOR, OTEL_* ...)  -- created with kubectl in guide step 5
+#   Secret    swo-apm                (SW_APM_SERVICE_KEY, SECRET_KEY_BASE) -- created with kubectl in guide step 5
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rails-swo-demo
+  labels:
+    app.kubernetes.io/name: rails-swo-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rails-swo-demo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rails-swo-demo
+    spec:
+      containers:
+        - name: rails
+          image: rails-swo-demo:local
+          # Image is built straight into the minikube node by `minikube image build`.
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: rails-swo-demo-config
+            - secretRef:
+                name: swo-apm
+          env:
+            # Used by solarwinds_apm's resource detector to tag spans with k8s.* attributes,
+            # which lets SWO link the APM service to the pod/cluster entities.
+            - name: SW_K8S_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: SW_K8S_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: SW_K8S_POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rails-swo-demo
+  labels:
+    app.kubernetes.io/name: rails-swo-demo
+spec:
+  selector:
+    app.kubernetes.io/name: rails-swo-demo
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
